@@ -5,7 +5,7 @@ This is done by finding the last #include line in a file and append a new includ
 
 It is convenient to combine this script with a search script like grep (we prefer ag which is faster).
 
-$ ./includes_patcher.py --include my_header.h `ag -l 'getFoo\(\)' ../`
+$ ./includes_patcher.py --include my_header.h `ag -l 'getFoo' ../`
 
 Here is a typical header.
 
@@ -41,6 +41,7 @@ def patch_file(path, new_include):
         lines = content.splitlines()
 
     if new_include in content:
+        print('Skipping ', path)
         return
 
     for i, line in enumerate(lines):
@@ -58,6 +59,8 @@ def patch_file(path, new_include):
         new_content = '\n'.join(new_lines)
         end_char = '\n' if end_of_file_is_new_line else ''
         f.write(new_content + end_char)
+
+    print('Patched ', path)
         
 
 def patch_all_files(args):
