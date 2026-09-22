@@ -9,7 +9,7 @@ import sys
 import os
 import collections
 import argparse
-from typing import Dict, List
+from typing import Dict, Iterable, List, Set, Tuple
 
 
 def walk_source_files(dn: str):

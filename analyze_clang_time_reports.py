@@ -14,25 +14,42 @@ import shutil
 def walk_source_files(dn: str, filters):
     paths = []
 
+    # .cxx.json is what CMake's unity build feature emits (CMAKE_UNITY_BUILD),
+    # in addition to the more common .cpp.json / .c.json / .cc.json from a
+    # normal per-file build.
+    extensions = ('.cpp.json', '.c.json', '.cc.json', '.cxx.json')
+
     for root, _, files in os.walk(dn):
         for path in files:
-            if path.endswith('.cpp.json') or path.endswith('.c.json') or path.endswith('.cc.json'):
-                abspath = os.path.join(root, path)
+            if not path.endswith(extensions):
+                continue
 
-                skip = False
-                if filters is not None:
-                    for filt in filters:
-                        if filt in path:
-                            filt = True
+            abspath = os.path.join(root, path)
 
-                if not skip:
-                    paths.append(abspath)
+            skip = False
+            if filters is not None:
+                for filt in filters:
+                    if filt in path:
+                        skip = True
+
+            if not skip:
+                paths.append(abspath)
 
     return paths
 
 
 def find_includes(path):
-    includes = {}
+    '''
+    Sum up the wall time clang spent inside each file's 'Source' trace event.
+
+    Older clang emits a single "complete" event per file (ph == 'X') with the
+    duration directly on it ('dur'). Newer clang (LLVM 18+) instead emits a
+    pair of "begin"/"end" events (ph == 'b' / 'e') sharing an id, which have
+    to be matched up (as a stack, keyed by pid/tid, since 'id' is reused) to
+    compute the duration ourselves. Both formats are supported here so this
+    script keeps working across clang versions.
+    '''
+    includes = collections.defaultdict(int)
 
     with open(path) as f:
         try:
@@ -45,17 +62,37 @@ def find_includes(path):
         except:
             return {}
 
-    # breakpoint()
     if 'beginningOfTime' not in content:
         return {}
 
-    for e in data.get('traceEvents', []):
-        path = e.get('args', {}).get('detail')
-        duration = e.get('dur')
-        name = e.get('name')
+    # Stack of (start_ts, detail) per (pid, tid), for the begin/end format.
+    open_spans = collections.defaultdict(list)
 
-        if path is not None and duration is not None and name == 'Source':
-            includes[path] = duration
+    for e in data.get('traceEvents', []):
+        if e.get('name') != 'Source':
+            continue
+
+        ph = e.get('ph')
+
+        if ph == 'X':
+            detail = e.get('args', {}).get('detail')
+            duration = e.get('dur')
+            if detail is not None and duration is not None:
+                includes[detail] += duration
+
+        elif ph == 'b':
+            detail = e.get('args', {}).get('detail')
+            key = (e.get('pid'), e.get('tid'))
+            open_spans[key].append((e.get('ts'), detail))
+
+        elif ph == 'e':
+            key = (e.get('pid'), e.get('tid'))
+            if not open_spans[key]:
+                continue
+            start_ts, detail = open_spans[key].pop()
+            if detail is None or start_ts is None or e.get('ts') is None:
+                continue
+            includes[detail] += e.get('ts') - start_ts
 
     return includes
 
@@ -70,6 +107,7 @@ def progress_bar(current, total, width=40):
 
 def run(args):
     includes_weight = collections.defaultdict(int)
+    includes_seen = collections.defaultdict(int)
 
     cols, _ = shutil.get_terminal_size(fallback=(80, 24))
     cols -= 7
@@ -83,14 +121,16 @@ def run(args):
         includes = find_includes(path)
         for include, cost in includes.items():
             includes_weight[include] += cost
+            includes_seen[include] += 1
+    sys.stderr.write('\n')
 
     scores = []
     for path, duration in includes_weight.items():
         scores.append((duration, path))
 
     scores.sort()
-    for count, filename in scores:
-        print(filename, count)
+    for duration, filename in scores:
+        print(f'{duration / 1000.0:12.1f}ms  seen={includes_seen[filename]:4d}  {filename}')
 
 
 if __name__ == '__main__':
