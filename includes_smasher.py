@@ -7,9 +7,12 @@ To sort by the file whose include complexity is the highest
 
 import sys
 import os
+import re
 import collections
 import argparse
 from typing import Dict, Iterable, List, Set, Tuple
+
+INCLUDE_REGEX = re.compile(r'^\s*#\s*include\s+[<"]([^>"]+)[>"]')
 
 
 def walk_source_files(dn: str):
@@ -27,28 +30,23 @@ def walk_source_files(dn: str):
     return paths
 
 
-def find_includes(path: str) -> list[str]:
+def find_includes(path: str) -> List[str]:
     includes = []
 
     try:
         with open(path) as f:
             content = f.read()
-    except:
+    except Exception:
         return []
 
     lines = content.splitlines()
     for line in lines:
-        if '#include' in line:
-            tokens = line.split()
-            if len(tokens) > 1:
-                filename = tokens[1]
-                filename = filename.replace('"', '').replace("'", '')
-                filename = filename.replace('<', '').replace('>', '')
-
-                if filename != '#include':
-                    includes.append(filename)
+        match = INCLUDE_REGEX.match(line)
+        if match:
+            includes.append(match.group(1))
 
     return includes
+
 
 
 # Thank you ChatGPT
@@ -126,7 +124,7 @@ def build_include_mapping(src_root, include_paths):
     return includes
 
 
-def run(src_root, include_paths):
+def run(src_root, include_paths, args=None):
     includes = build_include_mapping(src_root, include_paths)
 
     total_deps = 0
@@ -137,6 +135,13 @@ def run(src_root, include_paths):
     paths = walk_source_files(src_root)
 
     scores = []
+
+    save = getattr(args, 'save', False) if args else False
+    filter_filename = getattr(args, 'filename', 'foo.cpp') if args else 'foo.cpp'
+    verbose = getattr(args, 'verbose', False) if args else False
+    quiet = getattr(args, 'quiet', False) if args else False
+    headers = getattr(args, 'headers', False) if args else False
+    system = getattr(args, 'system', False) if args else False
 
     for path in paths:
         _, ext = os.path.splitext(path)
@@ -165,26 +170,26 @@ def run(src_root, include_paths):
         scores.append((deps_count, path))
         total_deps += deps_count
 
-        if args.save and os.path.basename(path) == args.filename:
+        if save and os.path.basename(path) == filter_filename:
             with open('/tmp/deps', 'w') as f:
                 f.write('\n'.join(all_descendants))
 
-        if args.verbose:
+        if verbose:
             for header in all_descendants:
                 print('\t' + header)
 
     scores.sort()
     for score in scores:
-        if not args.quiet:
+        if not quiet:
             print(score[1], score[0])
 
     print('src files total deps', total_deps)
 
-    if args.headers:
+    if headers:
 
         scores = []
         for k, v in includes_counter.items():
-            if args.system:
+            if system:
                 scores.append((v, k))
             else:
                 if k != k.lower(): # lame test to ignore system headers, who are lowercase ...
@@ -192,7 +197,7 @@ def run(src_root, include_paths):
 
         scores.sort()
         for count, filename in scores:
-            if not args.quiet:
+            if not quiet:
                 print(f"{filename:40} {count}")
 
         print('headers files total deps', sum(score[0] for score in scores))
@@ -200,7 +205,8 @@ def run(src_root, include_paths):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("root", help="Root folder to explore")
+    parser.add_argument("root", nargs="?", default=None, help="Root folder to explore")
+    parser.add_argument("-r", "--root", dest="root_flag", help="Root folder to explore")
     parser.add_argument("--include_paths", "-I", help="Headers root folder(s) to explore", action='append')
     parser.add_argument("--filename", help=".cpp file to filter", default='foo.cpp')
     parser.add_argument("--save", help="Save deps for a given file to disk", action='store_true')
@@ -208,7 +214,11 @@ if __name__ == '__main__':
     parser.add_argument("--headers", help="Display headers deps", action='store_true')
     parser.add_argument("--system", help="Display system headers", action='store_true')
     parser.add_argument("--quiet", help="Only print scores", action='store_true')
-    
+
     args = parser.parse_args()
 
-    run(args.root, args.include_paths)
+    root = args.root_flag or args.root
+    if not root:
+        parser.error("the following arguments are required: root (positional or via -r/--root)")
+
+    run(root, args.include_paths, args=args)

@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 '''
 Given a list of files to patch, and add header automatically.
 
@@ -29,30 +30,51 @@ private:
 '''
 
 import argparse
+import re
 
 
 def patch_file(path, new_include):
     '''
-    Search for the last #include
+    Search for the last #include and append after it.
+    If no #include is found, append after #pragma once if present, or at top of file.
     '''
-    j = 0
     with open(path) as f:
         content = f.read()
         lines = content.splitlines()
 
-    if new_include in content:
+    if (new_include.startswith('<') and new_include.endswith('>')) or (
+        new_include.startswith('"') and new_include.endswith('"')
+    ):
+        formatted_include = f'#include {new_include}'
+    else:
+        formatted_include = f'#include "{new_include}"'
+
+    if formatted_include in content or new_include in content:
         print('Skipping ', path)
         return
 
+    last_include_idx = -1
+    pragma_once_idx = -1
+
     for i, line in enumerate(lines):
-        if '#include' in line:
-            j = i
+        stripped = line.strip()
+        if stripped.startswith('#pragma once'):
+            pragma_once_idx = i
+        elif re.match(r'^\s*#\s*include\b', line):
+            last_include_idx = i
 
-    top_lines = lines[0:j+1]
-    new_include_line = [f'#include "{new_include}"']
-    bottom_lines = lines[j+1:]
+    if last_include_idx != -1:
+        insert_idx = last_include_idx + 1
+    elif pragma_once_idx != -1:
+        insert_idx = pragma_once_idx + 1
+    else:
+        insert_idx = 0
 
-    end_of_file_is_new_line = content[-1] == '\n'
+    top_lines = lines[:insert_idx]
+    new_include_line = [formatted_include]
+    bottom_lines = lines[insert_idx:]
+
+    end_of_file_is_new_line = content.endswith('\n') if content else True
 
     with open(path, 'w') as f:
         new_lines = top_lines + new_include_line + bottom_lines
@@ -61,18 +83,18 @@ def patch_file(path, new_include):
         f.write(new_content + end_char)
 
     print('Patched ', path)
-        
+
 
 def patch_all_files(args):
     for path in args.files:
         patch_file(path, args.include)
 
 
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("files", help="Files to patch", nargs='+')
-    parser.add_argument("--include", help="include to add")
+    parser.add_argument("--include", required=True, help="include to add")
     args = parser.parse_args()
 
     patch_all_files(args)
+
