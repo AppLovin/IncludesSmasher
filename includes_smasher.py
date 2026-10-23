@@ -91,7 +91,7 @@ def build_include_mapping(src_root, include_paths):
 
     paths = walk_source_files(src_root)
 
-    # First path collect all header -> [header1, header2, ...] relationships
+    # First pass collect all header -> [header1, header2, ...] relationships
     for path in paths:
         path_filename = os.path.basename(path)
         path_includes = find_includes(path)
@@ -187,7 +187,7 @@ def run(src_root, include_paths):
             if args.system:
                 scores.append((v, k))
             else:
-                if k != k.lower(): # lame test to ignore system headers, who are lowercase ...
+                if k != k.lower(): # lame test to ignore system headers, which are lowercase ...
                     scores.append((v, k))
 
         scores.sort()
@@ -204,7 +204,7 @@ if __name__ == '__main__':
     parser.add_argument("--include_paths", "-I", help="Headers root folder(s) to explore", action='append')
     parser.add_argument("--filename", help=".cpp file to filter", default='foo.cpp')
     parser.add_argument("--save", help="Save deps for a given file to disk", action='store_true')
-    parser.add_argument("--verbose", "-v", help="Print deps for each files", action='store_true')
+    parser.add_argument("--verbose", "-v", help="Print deps for each file", action='store_true')
     parser.add_argument("--headers", help="Display headers deps", action='store_true')
     parser.add_argument("--system", help="Display system headers", action='store_true')
     parser.add_argument("--quiet", help="Only print scores", action='store_true')

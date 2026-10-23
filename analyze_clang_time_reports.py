@@ -1,6 +1,6 @@
 '''
 When compiling with -ftime-trace clang (and gcc) will create a small json file containing timing information.
-This script find those .json files and aggregate the results.
+This script finds those .json files and aggregates the results.
 '''
 
 import argparse
