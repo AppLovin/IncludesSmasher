@@ -1,5 +1,5 @@
 '''
-Given a list of files to patch, and add header automatically.
+Given a list of files to patch, add a header automatically.
 
 This is done by finding the last #include line in a file and append a new include after that.
 
